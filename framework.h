@@ -20,3 +20,4 @@
 #include <string>
 #include <WinSock2.h>
 #include <Ws2tcpip.h>
+#include <windowsx.h>

@@ -18,6 +18,9 @@ HWND ipAddressText;
 HWND udpPortText;
 HWND freqText;
 HWND freqLabel;
+HWND seqNumEnableCheck;
+HWND seqNumEnableLabel;
+
 
 BOOL guiVisible = FALSE;
 BOOL radioStarted = FALSE;
@@ -224,6 +227,30 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
        NULL
    );
 
+   seqNumEnableLabel = CreateWindow(
+       L"STATIC",
+       L"Send Sequence",
+       WS_CHILD | WS_VISIBLE | SS_SIMPLE,
+       10, 125,
+       100, 35,
+       hWnd,
+       (HMENU)IDC_SEQNUM_LABEL,
+       (HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE),
+       NULL
+   );
+
+   seqNumEnableCheck = CreateWindow(
+       L"BUTTON",
+       NULL,
+       WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+       120, 120,
+       35, 25,
+       hWnd,
+       (HMENU)IDC_SEQNUM,
+       (HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE),
+       NULL
+   );
+
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
 
@@ -337,6 +364,7 @@ void startButtonClicked()
     static char f[256];
     static USHORT udpPort;
     static int64_t freq;
+    static BOOL sendSequenceNumber;
 
     if (!radioStarted)
     {
@@ -353,7 +381,9 @@ void startButtonClicked()
         udpPort = (USHORT)strtoul(udp, NULL, 10);
         freq = _strtoui64(f, NULL, 10);
 
-        if (radioStartStream(ip, udpPort, freq)) {
+        sendSequenceNumber = Button_GetCheck(seqNumEnableCheck);
+
+        if (radioStartStream(ip, udpPort, freq, sendSequenceNumber)) {
             radioStarted = TRUE;
             if (guiVisible) {
                 guiButtonClicked();
@@ -362,6 +392,7 @@ void startButtonClicked()
             EnableWindow(freqText, FALSE);
             EnableWindow(ipAddressText, FALSE);
             EnableWindow(udpPortText, FALSE);
+            EnableWindow(seqNumEnableCheck, FALSE);
         }
         else {
             MessageBox(NULL, L"Failed to start radio", NULL, MB_OK);
@@ -376,6 +407,7 @@ void startButtonClicked()
         EnableWindow(freqText, TRUE);
         EnableWindow(ipAddressText, TRUE);
         EnableWindow(udpPortText, TRUE);
+        EnableWindow(seqNumEnableCheck, TRUE);
         radioStarted = FALSE;
     }
     SetFocus(NULL);

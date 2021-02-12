@@ -46,24 +46,18 @@ std::condition_variable bufferUpdate;
 int iqPerCallback = 0;
 unsigned int bufferOverruns = 0;
 
-#define SEQUENCE_NUMBER false
+BOOL sendSequenceNumber = TRUE;
 
 unsigned int udpHead = 0;
 unsigned int udpTail = 0;
 const unsigned int udpTotalBuffers = 64;
 const unsigned int udpDataSize = 1024;
-#if SEQUENCE_NUMBER
-    const unsigned int udpBufferSize = 8 + udpDataSize;  // 8 bytes of sequence number, 1024 bytes if IQ data
-#else
-    const unsigned int udpBufferSize = udpDataSize;  // no sequence number, 1024 bytes if IQ data
-
-#endif
 uint64_t udpSequenceNumber = 0;
 
 #pragma pack(1)
 struct UdpBufferEntry {
     uint64_t sequence;
-    uint8_t data[udpBufferSize];
+    uint8_t data[udpDataSize];
 };
 
 UdpBufferEntry udpBuffer[udpTotalBuffers];
@@ -76,11 +70,12 @@ void udpStreamThreadFunction() {
     while (!threadShutdown) {
         bufferUpdate.wait_for(lck, std::chrono::seconds(1));
         while (udpTail != udpHead) {
-#if SEQUENCE_NUMBER
-            sendto(udpSocket, (const char *)&udpBuffer[udpTail], udpBufferSize, 0, (sockaddr*)&udpDestination, sizeof(udpDestination));
-#else
-            sendto(udpSocket, (const char*)&udpBuffer[udpTail].data, udpBufferSize, 0, (sockaddr*)&udpDestination, sizeof(udpDestination));
-#endif
+            if (sendSequenceNumber) {
+                sendto(udpSocket, (const char*)&udpBuffer[udpTail], udpDataSize + 8, 0, (sockaddr*)&udpDestination, sizeof(udpDestination));
+            }
+            else {
+                sendto(udpSocket, (const char*)&udpBuffer[udpTail].data, udpDataSize, 0, (sockaddr*)&udpDestination, sizeof(udpDestination));
+            }
             // catch error?
 
             unsigned int tempTail = udpTail + 1;
@@ -226,7 +221,7 @@ void radioHideGui(void)
         HideGUI();
 }
 
-BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency) {
+BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency, BOOL seqNumEnabled) {
     radioStreaming = FALSE;
     udpStreaming = FALSE;
 
@@ -245,6 +240,8 @@ BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency) {
     //char testMsg[] = "Testing 1 2 3";
     //sendto(udpSocket, testMsg, strlen(testMsg), 0, (sockaddr*)&udpDestination, sizeof(udpDestination));
     //closesocket(udpSocket);
+
+    sendSequenceNumber = seqNumEnabled;
 
     udpThread = std::thread(udpStreamThreadFunction);
     
