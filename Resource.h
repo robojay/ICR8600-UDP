@@ -20,6 +20,8 @@
 #define IDC_UDPPORT_LABEL		115
 #define IDC_SEQNUM_LABEL		116
 #define IDC_SEQNUM				117
+#define IDC_FLOAT_LABEL			118
+#define IDC_FLOAT				119
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1

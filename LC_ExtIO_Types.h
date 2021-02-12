@@ -408,7 +408,7 @@ typedef enum
   // Following status codes are processed when VersionInfo delivers
   //  0 == strcmp(progname, "HDSDR") && ( ver_major > 2 || ( ver_major == 2 && ver_minor >= 14 ) )
 
-#if 0
+#if 1
   // Following status codes are for future use - actually not implemented !
   //  0 == strcmp(progname, "HDSDR") && ( ver_major > 2 || ( ver_major == 2 && ver_minor >>> 14 ) )
 

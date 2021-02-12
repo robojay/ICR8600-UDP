@@ -20,6 +20,8 @@ HWND freqText;
 HWND freqLabel;
 HWND seqNumEnableCheck;
 HWND seqNumEnableLabel;
+HWND sendFloatCheck;
+HWND sendFloatLabel;
 
 
 BOOL guiVisible = FALSE;
@@ -251,6 +253,30 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
        NULL
    );
 
+   sendFloatLabel = CreateWindow(
+       L"STATIC",
+       L"Float",
+       WS_CHILD | WS_VISIBLE | SS_SIMPLE,
+       10, 155,
+       100, 35,
+       hWnd,
+       (HMENU)IDC_FLOAT_LABEL,
+       (HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE),
+       NULL
+   );
+
+   sendFloatCheck = CreateWindow(
+       L"BUTTON",
+       NULL,
+       WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+       120, 150,
+       35, 25,
+       hWnd,
+       (HMENU)IDC_FLOAT,
+       (HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE),
+       NULL
+   );
+
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
 
@@ -365,6 +391,7 @@ void startButtonClicked()
     static USHORT udpPort;
     static int64_t freq;
     static BOOL sendSequenceNumber;
+    static BOOL sendAsFloat;
 
     if (!radioStarted)
     {
@@ -382,8 +409,9 @@ void startButtonClicked()
         freq = _strtoui64(f, NULL, 10);
 
         sendSequenceNumber = Button_GetCheck(seqNumEnableCheck);
+        sendAsFloat = Button_GetCheck(sendFloatCheck);
 
-        if (radioStartStream(ip, udpPort, freq, sendSequenceNumber)) {
+        if (radioStartStream(ip, udpPort, freq, sendSequenceNumber, sendAsFloat)) {
             radioStarted = TRUE;
             if (guiVisible) {
                 guiButtonClicked();
@@ -393,6 +421,7 @@ void startButtonClicked()
             EnableWindow(ipAddressText, FALSE);
             EnableWindow(udpPortText, FALSE);
             EnableWindow(seqNumEnableCheck, FALSE);
+            EnableWindow(sendFloatCheck, FALSE);
         }
         else {
             MessageBox(NULL, L"Failed to start radio", NULL, MB_OK);
@@ -408,6 +437,7 @@ void startButtonClicked()
         EnableWindow(ipAddressText, TRUE);
         EnableWindow(udpPortText, TRUE);
         EnableWindow(seqNumEnableCheck, TRUE);
+        EnableWindow(sendFloatCheck, TRUE);
         radioStarted = FALSE;
     }
     SetFocus(NULL);

@@ -21,6 +21,8 @@ pfnCloseHW CloseHW;
 pfnStartHW StartHW;
 pfnStartHW64 StartHW64;
 pfnStopHW StopHW;
+pfnExtIoGetActualSrateIdx ExtIoGetActualSrateIdx;
+pfnExtIoGetSetting ExtIoGetSetting;
 
 //LPCWSTR dllName = L".\\ExtIO_Buffer.dll";
 LPCWSTR dllName = L".\\ExtIO_ICR8600.dll";
@@ -45,8 +47,12 @@ std::condition_variable bufferUpdate;
 
 int iqPerCallback = 0;
 unsigned int bufferOverruns = 0;
-
+int sRateIndex = 0;
+const int sRateIndex_5120_kHz = 8;
+const int bitRateIndex = 4;
+BOOL sample24bit = FALSE;
 BOOL sendSequenceNumber = TRUE;
+BOOL sendFloat = FALSE;
 
 unsigned int udpHead = 0;
 unsigned int udpTail = 0;
@@ -61,6 +67,19 @@ struct UdpBufferEntry {
 };
 
 UdpBufferEntry udpBuffer[udpTotalBuffers];
+
+BOOL isBitDepth24() {
+    static char dummy[1024];
+    static char value[1024];
+    int result = ExtIoGetSetting(bitRateIndex, dummy, value);
+    // very crude...
+    if (value[0] == '1') {
+        return TRUE;
+    }
+    else {
+        return FALSE;
+    }
+}
 
 void udpStreamThreadFunction() {
     std::mutex mtx;
@@ -90,56 +109,150 @@ void udpStreamThreadFunction() {
 
 int extIOCallback(int cnt, int status, float IQoffs, void* IQdata) 
 {
+    int retVal = 0;
+
     if (radioStreaming && (cnt > 0)) {
         // Data
         if (udpStreaming) {
             // lots of assumption on data size, etc. right now!!!
-            // assuming 512 IQ pairs per callback, 16bit unsigned ints
-            for (unsigned int i = 0; i < 2; i++) {
-                udpBuffer[udpHead].sequence = udpSequenceNumber++;
-                uint8_t* iqPtr = (uint8_t*)IQdata;
-                memcpy(&udpBuffer[udpHead].data, &iqPtr[i * udpDataSize], udpDataSize);
+            // assuming 512 IQ pairs per callback
 
-                unsigned int tempHead = udpHead + 1;
-                if (tempHead >= udpTotalBuffers) {
-                    tempHead = 0;
+            if (sample24bit) {
+                // handle the 24bit values
+                // will stuff these as 32bit values
+                // data is in little endian format
+                // can stuff last byte as zero/sign extended and retain proper signed value
+                // III0 QQQ0
+                // assuming 512 pairs, which results in 512 * 8 bytes = 4096 bytes to send
+                // do that in 4 packets of 1024 bytes
+                uint8_t* iqPtr = (uint8_t*)IQdata;
+                for (unsigned int i = 0; i < 4; i++) {
+                    udpBuffer[udpHead].sequence = udpSequenceNumber++;
+                    // need to do this the hard way
+                    for (unsigned int dataIndex = 0; dataIndex < 1024; dataIndex += 4) {
+                        udpBuffer[udpHead].data[dataIndex] = *iqPtr++;
+                        udpBuffer[udpHead].data[dataIndex + 1] = *iqPtr++;
+                        udpBuffer[udpHead].data[dataIndex + 2] = *iqPtr;
+                        udpBuffer[udpHead].data[dataIndex + 3] = ((*iqPtr++ & 0x80) == 0x80) ? 0xff : 0x00;
+
+                        if (sendFloat) {
+                            // convert data[dataIndex]...[dataIndex + 3] into a float
+                            int32_t* dInt32 = (int32_t*)&udpBuffer->data[dataIndex];
+                            float dFloat = (float)*dInt32 / (float)8387967.0;
+                            memcpy(&udpBuffer[udpHead].data[dataIndex], (uint8_t*)&dFloat, 4);
+                        }
+
+                    }
+                    unsigned int tempHead = udpHead + 1;
+                    if (tempHead >= udpTotalBuffers) {
+                        tempHead = 0;
+                    }
+                    if (tempHead == udpTail) {
+                        bufferOverruns++;
+                        //if (crazyDebug) std::cout << "o";
+                        //else std::cerr << "[ExtIO_Buffer] Buffer overrun" << std::endl;
+                        tempHead = udpHead;
+                    }
+                    else {
+                        //if (crazyDebug) std::cout << "b";
+                    }
+                    udpHead = tempHead;
+                    bufferUpdate.notify_one();
                 }
-                if (tempHead == udpTail) {
-                    bufferOverruns++;
-                    //if (crazyDebug) std::cout << "o";
-                    //else std::cerr << "[ExtIO_Buffer] Buffer overrun" << std::endl;
-                    tempHead = udpHead;
+            }
+            else {
+                if (sendFloat) {
+                    // convert the 16bit ints to 32 bit floats and send
+                    // assuming 512 pairs, which results in 512 * 8 bytes = 4096 bytes to send
+                    // do that in 4 packets of 1024 bytes
+                    int16_t* iqPtr = (int16_t*)IQdata;
+                    for (unsigned int i = 0; i < 4; i++) {
+                        udpBuffer[udpHead].sequence = udpSequenceNumber++;
+                        // need to do this the hard way
+                        for (unsigned int dataIndex = 0; dataIndex < 1024; dataIndex += 4) {
+                            float dFloat = (float)*iqPtr++;
+                            dFloat = dFloat / (float)32767.0;
+                            memcpy(&udpBuffer[udpHead].data[dataIndex], (uint8_t*)&dFloat, 4);
+                        }
+                        unsigned int tempHead = udpHead + 1;
+                        if (tempHead >= udpTotalBuffers) {
+                            tempHead = 0;
+                        }
+                        if (tempHead == udpTail) {
+                            bufferOverruns++;
+                            //if (crazyDebug) std::cout << "o";
+                            //else std::cerr << "[ExtIO_Buffer] Buffer overrun" << std::endl;
+                            tempHead = udpHead;
+                        }
+                        else {
+                            //if (crazyDebug) std::cout << "b";
+                        }
+                        udpHead = tempHead;
+                        bufferUpdate.notify_one();
+                    }
                 }
                 else {
-                    //if (crazyDebug) std::cout << "b";
+                    // handle the 16bit values
+                    // 512 * 4 bytes = 2048 bytes to send
+                    // will do this in 2 packets of 1024 bytes
+                    for (unsigned int i = 0; i < 2; i++) {
+                        udpBuffer[udpHead].sequence = udpSequenceNumber++;
+                        uint8_t* iqPtr = (uint8_t*)IQdata;
+                        memcpy(&udpBuffer[udpHead].data, &iqPtr[i * udpDataSize], udpDataSize);
+
+                        unsigned int tempHead = udpHead + 1;
+                        if (tempHead >= udpTotalBuffers) {
+                            tempHead = 0;
+                        }
+                        if (tempHead == udpTail) {
+                            bufferOverruns++;
+                            //if (crazyDebug) std::cout << "o";
+                            //else std::cerr << "[ExtIO_Buffer] Buffer overrun" << std::endl;
+                            tempHead = udpHead;
+                        }
+                        else {
+                            //if (crazyDebug) std::cout << "b";
+                        }
+                        udpHead = tempHead;
+                        bufferUpdate.notify_one();
+                    }
                 }
-                udpHead = tempHead;
-                bufferUpdate.notify_one();
             }
         }
-        return 0;
+        retVal = 0;
     }
-    else {
+    else if (cnt == -1 ){
         // Info
+        switch (status) {
+            case extHw_Changed_SampleRate:
+            case extHw_SampleFmt_IQ_INT16:
+            case extHw_SampleFmt_IQ_INT24:
+                // update sample rate and more importantly, bit depth
+                // trust, well, ok, don't trust, verify...
 
-        // ** it is possible format changes while running ***
-        // TODO: handle this...
-        // following status codes to change sampleformat at runtime
-        //            , extHw_SampleFmt_IQ_UINT8 = 126   // change sample format to unsigned 8 bit INT (Realtek RTL2832U)
-        //                , extHw_SampleFmt_IQ_INT16 = 127   //           -"-           signed 16 bit INT
-        //                , extHw_SampleFmt_IQ_INT24 = 128   //           -"-           signed 24 bit INT
-        //                , extHw_SampleFmt_IQ_INT32 = 129   //           -"-           signed 32 bit INT
-        //                , extHw_SampleFmt_IQ_FLT32 = 130   //           -"-           signed 16 bit FLOAT
-
-        int retVal;
+                // see note about bit depth in radioStartStream()
+                sRateIndex = ExtIoGetActualSrateIdx();
+                if (sRateIndex == sRateIndex_5120_kHz) {
+                    sample24bit = FALSE;
+                }
+                else {
+                    sample24bit = isBitDepth24();
+                }
+                break;
+            default:
+                break;
+        }
 
         // ignoring lots of stuff here... TODO!!!!
 
         retVal = 0;
 
-        return retVal;
     }
-    return 0;
+    else {
+        // ???
+        retVal = 0;
+    }
+    return retVal;
 }
 
 BOOL radioOpen() 
@@ -170,6 +283,9 @@ BOOL radioOpen()
         }
 
         StopHW = (pfnStopHW)GetProcAddress(extIO, "StopHW");
+
+        ExtIoGetActualSrateIdx = (pfnExtIoGetActualSrateIdx)GetProcAddress(extIO, "ExtIoGetActualSrateIdx");
+        ExtIoGetSetting = (pfnExtIoGetSetting)GetProcAddress(extIO, "ExtIoGetSetting");
     }
     else 
     {
@@ -221,7 +337,7 @@ void radioHideGui(void)
         HideGUI();
 }
 
-BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency, BOOL seqNumEnabled) {
+BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency, BOOL seqNumEnabled, BOOL sendAsFloat) {
     radioStreaming = FALSE;
     udpStreaming = FALSE;
 
@@ -229,6 +345,24 @@ BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency, BOOL s
     udpTail = 0;
 
     iqPerCallback = StartHW64(frequency);
+
+    // we don't really know the bit depth selected
+    // at 5.12MHz, 16bit only is valid
+    // however, if the user selects a lower sampling rate
+    // and 24bit depth, then switches back to 5.12MHz
+    // the bit depth returned by GetSetting() still indicates
+    // 24bits
+    // we'll force it here...
+    // and do the same in the callback function if sample rate change is detected
+    sRateIndex = ExtIoGetActualSrateIdx();
+    if (sRateIndex == sRateIndex_5120_kHz) {
+        sample24bit = FALSE;
+    }
+    else {
+        sample24bit = isBitDepth24();
+    }
+    
+    sendFloat = sendAsFloat;
 
     threadShutdown = FALSE;
 
