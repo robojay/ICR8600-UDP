@@ -56,7 +56,7 @@ BOOL sendFloat = FALSE;
 
 unsigned int udpHead = 0;
 unsigned int udpTail = 0;
-const unsigned int udpTotalBuffers = 64;
+const unsigned int udpTotalBuffers = 4096;
 const unsigned int udpDataSize = 1024;
 uint64_t udpSequenceNumber = 0;
 
@@ -130,17 +130,22 @@ int extIOCallback(int cnt, int status, float IQoffs, void* IQdata)
                     udpBuffer[udpHead].sequence = udpSequenceNumber++;
                     // need to do this the hard way
                     for (unsigned int dataIndex = 0; dataIndex < 1024; dataIndex += 4) {
-                        udpBuffer[udpHead].data[dataIndex] = *iqPtr++;
-                        udpBuffer[udpHead].data[dataIndex + 1] = *iqPtr++;
-                        udpBuffer[udpHead].data[dataIndex + 2] = *iqPtr;
-                        udpBuffer[udpHead].data[dataIndex + 3] = ((*iqPtr++ & 0x80) == 0x80) ? 0xff : 0x00;
+                        int32_t* p = (int32_t*)iqPtr;
+                        int32_t dInt32 = *p;  // this will have invalid high byte
+                        dInt32 = dInt32 & 0x00ffffff;
+                        if ((dInt32 & 0x00800000) == 0x00800000) {
+                            dInt32 = dInt32 | 0xff000000;
+                        }
 
                         if (sendFloat) {
-                            // convert data[dataIndex]...[dataIndex + 3] into a float
-                            int32_t* dInt32 = (int32_t*)&udpBuffer->data[dataIndex];
-                            float dFloat = (float)*dInt32 / (float)8387967.0;
+                            float dFloat = (float)dInt32 / (float)8387967.0;
                             memcpy(&udpBuffer[udpHead].data[dataIndex], (uint8_t*)&dFloat, 4);
                         }
+                        else {
+                            memcpy(&udpBuffer[udpHead].data[dataIndex], (uint8_t*)&dInt32, 4);
+                        }
+
+                        iqPtr += 3;
 
                     }
                     unsigned int tempHead = udpHead + 1;
