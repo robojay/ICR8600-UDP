@@ -51,6 +51,10 @@ Use the included Python 3 test program iq_rx.py to check your setup.  It will li
 
 ## Reference Links
 [HDSDR Homepage](http://www.hdsdr.de/): For information about ExtIO and links to specific [hardware](http://www.hdsdr.de/hardware.html) support.
+
 [LC_ExtIO_Types.h](http://www.hdsdr.de/download/LC_ExtIO_Types.h): C Header file for ExtIO drivers
+
 [Icom R8600 USB I/Q Package for HDSDR](https://www.icomjapan.com/support/firmware_driver/1972/): Includes the ExtIO driver for the R8600
-[GNURadio](https://www.gnuradio.org/): 
+
+[GNURadio](https://www.gnuradio.org/)
+
