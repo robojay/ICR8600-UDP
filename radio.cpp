@@ -20,6 +20,7 @@ pfnOpenHW OpenHW;
 pfnCloseHW CloseHW;
 pfnStartHW StartHW;
 pfnStartHW64 StartHW64;
+pfnSetHWLO64 SetHWLO64;
 pfnStopHW StopHW;
 pfnExtIoGetActualSrateIdx ExtIoGetActualSrateIdx;
 pfnExtIoGetSetting ExtIoGetSetting;
@@ -289,6 +290,8 @@ BOOL radioOpen()
 
         StopHW = (pfnStopHW)GetProcAddress(extIO, "StopHW");
 
+        SetHWLO64 = (pfnSetHWLO64)GetProcAddress(extIO, "SetHWLO64");
+
         ExtIoGetActualSrateIdx = (pfnExtIoGetActualSrateIdx)GetProcAddress(extIO, "ExtIoGetActualSrateIdx");
         ExtIoGetSetting = (pfnExtIoGetSetting)GetProcAddress(extIO, "ExtIoGetSetting");
     }
@@ -350,6 +353,8 @@ BOOL radioStartStream(char *ipAddress, USHORT udpPort, int64_t frequency, BOOL s
     udpTail = 0;
 
     iqPerCallback = StartHW64(frequency);
+    // Evidently only the first call to StartHW64 sets the local oscillator ... ???
+    SetHWLO64(frequency);
 
     // we don't really know the bit depth selected
     // at 5.12MHz, 16bit only is valid
